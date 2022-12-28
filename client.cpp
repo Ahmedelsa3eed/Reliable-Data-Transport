@@ -15,7 +15,33 @@
 #include <fstream>
 #include <string.h>
 
-using namespace std;
+/* Data only packets */
+typedef struct packet {
+    /* Header */
+    long chsum;
+    long len;
+    long seqno;
+    /* Data */
+    char data[500];
+}packet;
+
+typedef struct ack_packet {
+    long chsum;
+    long len;
+    long ackno;
+} ack_packet;
+const int PORT = 8080;
+const int BUFFER_SIZE = 1024;
+
+void writeFile(char *fileName, std::string content, size_t nBytes, size_t startLineSize)
+{
+    FILE *fp;
+    fp = fopen(fileName, "wb");
+    if (fp == NULL)
+        return;
+    fwrite(content.c_str() + startLineSize, sizeof(char), nBytes - startLineSize, fp);
+    fclose(fp);
+}
 
 typedef struct packet
 {
