@@ -1,0 +1,4 @@
+# ninja log v5
+1819	2358	6939368393366435	Reliable_Data_Transport.exe	49b8e3e2f3187562
+1	1028	1672236589855090116	CMakeFiles/Reliable_Data_Transport.dir/server.cpp.o	9c576a7906117d46
+1	1025	1672236589851090088	CMakeFiles/Reliable_Data_Transport.dir/client.cpp.o	fb9a4c821370d466

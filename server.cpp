@@ -2,7 +2,6 @@
 #include <string>
 #include <cstring>
 #include <thread>
-#include <chrono>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -20,6 +19,12 @@ typedef struct packet {
     /* Data */
     char data[500];
 }packet;
+
+typedef struct MessageArgs {
+    int socket_fd;
+    sockaddr_in client_address;
+    std::string filePath;
+}MessageArgs;
 
 typedef struct ack_packet {
     long chsum;
@@ -49,21 +54,24 @@ char *readFile(char *fileName)
     fclose(fp);
     return content;
 }
-void sendDataChunks(int client_fd, char *fileName) {
+void sendDataChunks(int client_fd, sockaddr_in client_address , char *fileName) {
     // Send the message to the client
     std::string  message = readFile(fileName);
 
     for (int i = 0; i< message.length() ; i += BUFFER_SIZE) {
         if ( i + BUFFER_SIZE > message.length()) {
-            send(client_fd, message.c_str() + i, message.length() - i, 0);
+            sendto(client_fd, message.c_str() + i, message.length() - i, 0,
+                   (sockaddr*) &client_address, sizeof(client_address));
         }
         else {
-            send(client_fd, message.c_str() + i, BUFFER_SIZE, 0);
+            sendto(client_fd, message.c_str() + i, BUFFER_SIZE, 0,
+                   (sockaddr*) &client_address, sizeof(client_address));
         }
 
         // wait acknowledgement from client
         char buffer[BUFFER_SIZE];
-        int bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
+        long bytes_received = recvfrom(client_fd, buffer, BUFFER_SIZE, 0,
+                                      (sockaddr*) &client_address, (socklen_t*) sizeof(client_address));
         if (bytes_received <= 0) {
             break;
         }
@@ -73,16 +81,17 @@ void sendDataChunks(int client_fd, char *fileName) {
     }
 }
 
-void handle_connection(int client_fd) {
-    // Receive a message from the client
+void* handle_connection(void* args) {
+    // Get the socket and client address from the arguments
+    MessageArgs* message_args = (MessageArgs*) args;
+    int client_fd = message_args->socket_fd;
+    sockaddr_in client_address = message_args->client_address;
+    std::string filePath = message_args->filePath;
     char buffer[BUFFER_SIZE];
-    int bytes_received  = recv(client_fd, buffer, BUFFER_SIZE, 0);
-    if (bytes_received <= 0) {
-        return;
-    }
-    std::cout << "Received First request " << bytes_received << " bytes: " << buffer << std::endl;
+    socklen_t client_len = sizeof(client_address);
+
     // should handle the send of data in chunks
-    sendDataChunks(client_fd, buffer);
+    sendDataChunks(client_fd, client_address , (char *)filePath.c_str());
 
     // Close the connection
     close(client_fd);
@@ -90,7 +99,7 @@ void handle_connection(int client_fd) {
 
 int main() {
     // Create a socket
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
         std::cerr << "Error creating socket" << std::endl;
         return 1;
@@ -105,27 +114,28 @@ int main() {
         std::cerr << "Error binding socket to port" << std::endl;
         return 1;
     }
-
-    // Listen for incoming connections
-    if (listen(sockfd, BACKLOG) < 0) {
-        std::cerr << "Error listening for connections" << std::endl;
-        return 1;
-    }
-
     while (true) {
         // Wait for a connection
+        char buffer[BUFFER_SIZE];
         std::cout << "Waiting for a connection..." << std::endl;
         sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
-        int client_fd = accept(sockfd, (sockaddr*)&client_addr, &client_addr_len);
-        if (client_fd < 0) {
+        long bytes_received= recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (sockaddr *) &client_addr, &client_addr_len);
+        if (bytes_received < 0) {
             std::cerr << "Error accepting connection" << std::endl;
             continue;
         }
 
         // Create a new thread to handle the connection
-        std::thread t(handle_connection, client_fd);
-        t.detach();
+        MessageArgs messageArgs;
+        messageArgs.socket_fd = sockfd;
+        messageArgs.client_address = client_addr;
+        // get the file path from the buffer
+        std::string str;
+        str = buffer;
+        messageArgs.filePath = str.substr(0,bytes_received);
+        pthread_t thread;
+        pthread_create(&thread, NULL, handle_connection, &messageArgs);
     }
 
     // Close the socket
