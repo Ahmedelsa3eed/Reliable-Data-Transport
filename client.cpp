@@ -55,20 +55,20 @@ int main() {
         printf("\n Socket creation error \n");
         return -1;
     }
-
+    
     memset(&serv_addr, 0, sizeof(serv_addr));
 
     readClientData();
-
+    
     serv_addr.sin_family = AF_INET; // set to AF_INET to use IPv4
-    serv_addr.sin_port = 8080; // port number
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) == -1)
+    serv_addr.sin_port = htons(stoi(clientData[1]));
+    if (inet_pton(AF_INET, clientData[0].c_str(), &serv_addr.sin_addr) == -1)
     {
         printf("\n Invalid address/ Address not supported \n");
         return -1;
     }
 
-    strcpy(pck->data, "");
+    strcpy(pck->data, clientData[2].c_str());
     pck->len = clientData[2].size();
 
     // send the packet data directly for now
