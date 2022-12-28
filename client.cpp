@@ -34,7 +34,8 @@ typedef struct packet {
     char data[MSS];
 } packet;
 
-int sock_fd = 0, client_fd, byte_count = 0;
+int sock_fd = 0, client_fd;
+long byte_count = 0;
 struct sockaddr_in serv_addr;
 socklen_t fromlen;
 vector<string> clientData(3); // <IP, port, filename>
@@ -112,6 +113,9 @@ void receiveServerData() {
         printf("%d bytes of data in buf\n", byte_count);
         // write received data
         wf.write(buffer, byte_count);
+        wf.flush();
+        sleep(1);
+        sendto(sock_fd, "ACK", 3, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();
     if (!wf.good()) {
