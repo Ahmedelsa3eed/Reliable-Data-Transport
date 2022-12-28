@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <vector>
+using namespace std;
 
 const int PORT = 8080;
 const int BACKLOG = 5;
@@ -17,13 +19,8 @@ typedef struct packet {
     long len;
     long seqno;
     /* Data */
-    char data[500];
+    char data[16];
 }packet;
-
-typedef struct MessageArgs {
-    sockaddr_in client_address;
-    std::string filePath;
-}MessageArgs;
 
 typedef struct ack_packet {
     long chsum;
@@ -31,41 +28,53 @@ typedef struct ack_packet {
     long ackno;
 } ack_packet;
 
-packet make_packet(long seqno, const std::string data) {
+typedef struct MessageArgs {
+    sockaddr_in client_address;
+    std::string filePath;
+}MessageArgs;
+
+
+
+packet make_packet(long seqno, int len,char data[]) {
     packet p;
     p.chsum = 0;
-    p.len = data.length();
+    p.len = len;
     p.seqno = seqno;
-    strcpy(p.data, data.c_str());
+    strcpy(p.data, data);
     return p;
 }
-char *readFile(char *fileName)
+std::vector<packet> readFile(char *fileName)
 {
     FILE *fp;
+    std::vector<packet> packets;
     char *content = (char *)malloc(10000);
     fp = fopen(fileName, "rb");
     if (fp == NULL)
-        return NULL;
-    unsigned int nBytes = 0;
+        return packets;
+    int nBytes = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
+        if(nBytes == 16) {
+            packet p = make_packet(nBytes, nBytes,content);
+            packets.push_back(p);
+            nBytes = 0;
+        }
+    }
+    if (nBytes != 0) {
+        packet p = make_packet(nBytes, nBytes,content);
+        packets.push_back(p);
     }
     fclose(fp);
-    return content;
+    free(content);
+    return packets;
 }
 void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
     // Send the message to the client
-    std::string  message = readFile(fileName);
-
-    for (int i = 0; i< message.length() ; i += BUFFER_SIZE) {
-        if ( i + BUFFER_SIZE > message.length()) {
-            sendto(sockfd, message.c_str() + i, message.length() - i, 0,
+    std::vector<packet> packets = readFile(fileName);
+    int n = packets.size();
+    for (int i = 0; i< n ; i ++) {
+        sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
                    (sockaddr*) &client_address, sizeof(client_address));
-        }
-        else {
-            sendto(sockfd, message.c_str() + i, BUFFER_SIZE, 0,
-                   (sockaddr*) &client_address, sizeof(client_address));
-        }
 
         // wait acknowledgement from client
         char buffer[BUFFER_SIZE];

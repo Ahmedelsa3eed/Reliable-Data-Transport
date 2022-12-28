@@ -14,7 +14,7 @@
 #include <vector>
 #include <fstream>
 #include <string.h>
-#define MSS 500 // Maximum Segment Size
+#define MSS 16 // Maximum Segment Size
 #define MAXDATASIZE 1024 // 1k bytes: max number of bytes we can get at once
 
 using namespace std;
@@ -27,9 +27,9 @@ typedef struct ack_packet {
 
 typedef struct packet {
     /* Header */
-    uint16_t chsum;
-    uint16_t len;
-    uint16_t seqno;
+    long chsum;
+    long len;
+    long seqno;
     /* Data */
     char data[MSS];
 } packet;
@@ -103,18 +103,19 @@ void receiveServerData() {
     }
     while (true) {
         fromlen = sizeof serv_addr;
+        packet packet;
         // receive data in buffer
-        if ((byte_count = recvfrom(sock_fd, buffer, sizeof buffer, 0,
+        if ((byte_count = recvfrom(sock_fd, &packet, sizeof(packet) , 0,
                                 (struct sockaddr *)&serv_addr, &fromlen)) < 1)
         {
             printf("revfrom finished \n");
             break;
         }
         printf("%d bytes of data in buf\n", byte_count);
+        printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
         // write received data
-        wf.write(buffer, byte_count);
+        wf.write(packet.data, packet.len);
         wf.flush();
-        sleep(1);
         sendto(sock_fd, "ACK", 3, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();
