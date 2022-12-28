@@ -8,7 +8,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-const int PORT = 8090;
+const int PORT = 8080;
 const int BACKLOG = 5;
 const int BUFFER_SIZE = 16;
 const int TIMEOUT = 5;  // timeout in seconds
@@ -27,6 +27,14 @@ typedef struct ack_packet {
     long ackno;
 } ack_packet;
 
+packet make_packet(long seqno, const std::string data) {
+    packet p;
+    p.chsum = 0;
+    p.len = data.length();
+    p.seqno = seqno;
+    strcpy(p.data, data.c_str());
+    return p;
+}
 char *readFile(char *fileName)
 {
     FILE *fp;
@@ -41,9 +49,9 @@ char *readFile(char *fileName)
     fclose(fp);
     return content;
 }
-void sendDataChunks(int client_fd) {
+void sendDataChunks(int client_fd, char *fileName) {
     // Send the message to the client
-    std::string  message = readFile("test.txt");
+    std::string  message = readFile(fileName);
 
     for (int i = 0; i< message.length() ; i += BUFFER_SIZE) {
         if ( i + BUFFER_SIZE > message.length()) {
@@ -74,7 +82,7 @@ void handle_connection(int client_fd) {
     }
     std::cout << "Received First request " << bytes_received << " bytes: " << buffer << std::endl;
     // should handle the send of data in chunks
-    sendDataChunks(client_fd);
+    sendDataChunks(client_fd, buffer);
 
     // Close the connection
     close(client_fd);

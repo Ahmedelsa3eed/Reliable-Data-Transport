@@ -24,7 +24,7 @@ typedef struct ack_packet {
     long len;
     long ackno;
 } ack_packet;
-const int PORT = 8090;
+const int PORT = 8080;
 const int BUFFER_SIZE = 1024;
 
 void writeFile(char *fileName, std::string content, size_t nBytes, size_t startLineSize)
@@ -35,7 +35,6 @@ void writeFile(char *fileName, std::string content, size_t nBytes, size_t startL
         return;
     fwrite(content.c_str() + startLineSize, sizeof(char), nBytes - startLineSize, fp);
     fclose(fp);
-
 }
 
 int main() {
