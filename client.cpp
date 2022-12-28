@@ -21,15 +21,15 @@ using namespace std;
 
 typedef struct ack_packet {
     uint16_t chsum;
-    uint16_t len;
     uint16_t ackno;
+    uint16_t len;
 } ack_packet;
 
 typedef struct packet {
     /* Header */
-    long chsum;
-    long len;
-    long seqno;
+    uint16_t chsum;
+    uint16_t len;
+    uint16_t seqno;
     /* Data */
     char data[MSS];
 } packet;
@@ -116,7 +116,11 @@ void receiveServerData() {
         // write received data
         wf.write(packet.data, packet.len);
         wf.flush();
-        sendto(sock_fd, "ACK", 3, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        ack_packet ack;
+        ack.ackno = packet.seqno+1;
+        printf("Sending ACK %d\n", ack.ackno);
+        ack.len = 0;
+        sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();
     if (!wf.good()) {

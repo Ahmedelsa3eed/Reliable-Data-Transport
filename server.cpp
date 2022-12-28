@@ -15,17 +15,17 @@ const int BUFFER_SIZE = 16;
 const int TIMEOUT = 5;  // timeout in seconds
 typedef struct packet {
     /* Header */
-    long chsum;
-    long len;
-    long seqno;
+    uint16_t chsum;
+    uint16_t len;
+    uint16_t seqno;
     /* Data */
     char data[16];
 }packet;
 
 typedef struct ack_packet {
-    long chsum;
-    long len;
-    long ackno;
+    uint16_t chsum;
+    uint16_t ackno;
+    uint16_t len;
 } ack_packet;
 
 typedef struct MessageArgs {
@@ -35,7 +35,7 @@ typedef struct MessageArgs {
 
 
 
-packet make_packet(long seqno, int len,char data[]) {
+packet make_packet(uint16_t seqno, uint16_t len,char data[]) {
     packet p;
     p.chsum = 0;
     p.len = len;
@@ -52,16 +52,18 @@ std::vector<packet> readFile(char *fileName)
     if (fp == NULL)
         return packets;
     int nBytes = 0;
+    int seqno = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
+        seqno++;
         if(nBytes == 16) {
-            packet p = make_packet(nBytes, nBytes,content);
+            packet p = make_packet(seqno, nBytes,content);
             packets.push_back(p);
             nBytes = 0;
         }
     }
     if (nBytes != 0) {
-        packet p = make_packet(nBytes, nBytes,content);
+        packet p = make_packet(seqno, nBytes,content);
         packets.push_back(p);
     }
     fclose(fp);
@@ -77,13 +79,13 @@ void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
                    (sockaddr*) &client_address, sizeof(client_address));
 
         // wait acknowledgement from client
-        char buffer[BUFFER_SIZE];
+        ack_packet ack;
         socklen_t client_addr_len = sizeof(client_address);
-        long bytes_received = recvfrom(sockfd, buffer, BUFFER_SIZE, MSG_WAITALL, (sockaddr *) &client_address, &client_addr_len);
+        long bytes_received = recvfrom(sockfd, &ack, sizeof(ack), 0, (sockaddr *) &client_address, &client_addr_len);
         if (bytes_received <= 0) {
             break;
         }
-        std::cout << "Received " << bytes_received << " bytes: " << buffer << std::endl;
+        std::cout << "Received " << bytes_received << " bytes: " << ack.ackno << std::endl;
 
 
     }
