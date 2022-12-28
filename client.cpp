@@ -15,33 +15,13 @@
 #include <fstream>
 #include <string.h>
 
-/* Data only packets */
-typedef struct packet {
-    /* Header */
-    long chsum;
-    long len;
-    long seqno;
-    /* Data */
-    char data[500];
-}packet;
+using namespace std;
 
 typedef struct ack_packet {
     long chsum;
     long len;
     long ackno;
 } ack_packet;
-const int PORT = 8080;
-const int BUFFER_SIZE = 1024;
-
-void writeFile(char *fileName, std::string content, size_t nBytes, size_t startLineSize)
-{
-    FILE *fp;
-    fp = fopen(fileName, "wb");
-    if (fp == NULL)
-        return;
-    fwrite(content.c_str() + startLineSize, sizeof(char), nBytes - startLineSize, fp);
-    fclose(fp);
-}
 
 typedef struct packet
 {
@@ -75,7 +55,7 @@ int main() {
     serv_addr.sin_port = htons(stoi(clientData[1]));
     if (inet_pton(AF_INET, clientData[0].c_str(), &serv_addr.sin_addr) == -1)
     {
-        printf("\nInvalid address/ Address not supported \n");
+        printf("\n Invalid address/ Address not supported \n");
         return -1;
     }
 
@@ -84,7 +64,7 @@ int main() {
     if ((sendto(sock_fd, pck->data, pck->len, 0,
                 (struct sockaddr *)&serv_addr, sizeof(serv_addr))) == -1)
     {
-        perror("talker: sendto");
+        printf("\n Error: sendto \n");
         return -1;
     }
 
