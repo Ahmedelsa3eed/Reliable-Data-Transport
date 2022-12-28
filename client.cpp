@@ -111,14 +111,12 @@ void receiveServerData() {
             printf("revfrom finished \n");
             break;
         }
-        printf("%d bytes of data in buf\n", byte_count);
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
         // write received data
         wf.write(packet.data, packet.len);
         wf.flush();
         ack_packet ack;
         ack.ackno = packet.seqno+1;
-        printf("Sending ACK %d\n", ack.ackno);
         ack.len = 0;
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
