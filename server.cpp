@@ -12,6 +12,8 @@
 using namespace std;
 
 const int TIMEOUT_SECONDS = 5;
+double PLP = 0.2; // Packet Loss Probability
+
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
 
@@ -90,10 +92,19 @@ int timeOut(int sockfd) {
 
 void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     // Send the message to the client
+    clock_t start = std::clock();
+    int nBytes = 0;
     vector<packet> packets = readFile(fileName);
     unsigned int n = packets.size();
     for (int i = 0; i < n ; i++) {
-        sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
+        int packetSize = sizeof(long)*3+packets[i].len;
+        if ( (double)( rand() % 100 ) / 100.0 < PLP) {
+            printf("Packet %d lost\n", i);
+            i--;
+            continue;
+        }
+        nBytes+=packetSize;
+        sendto(sockfd, &packets[i],packetSize , 0,
                    (sockaddr*) &client_address, sizeof(client_address));
 
         // wait acknowledgement from client
@@ -117,6 +128,12 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
             cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << endl;
         }
     }
+
+    clock_t end = std::clock();
+    double elapsed_secs = double(end - start) / CLOCKS_PER_SEC;
+    printf("Time taken: %f Sec\n", elapsed_secs);
+    printf("Number of bytes sent: %d Byte\n", nBytes);
+    printf("Throughput: %f Bps\n", nBytes/elapsed_secs);
 }
 
 void handle_connection(void* args) {
