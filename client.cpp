@@ -16,6 +16,7 @@
 #include <string.h>
 #define MSS 16 // Maximum Segment Size
 #define MAXDATASIZE 1024 // 1k bytes: max number of bytes we can get at once
+#define WINDOWSIZE 4
 
 using namespace std;
 
@@ -41,9 +42,9 @@ socklen_t fromlen;
 vector<string> clientData(3); // <IP, port, filename>
 packet *pck;
 char buffer[MAXDATASIZE];
+vector<bool> ackedPackets(WINDOWSIZE, false);
 
 void readClientData();
-void writeServerData();
 void receiveServerData();
 
 int main() {
@@ -71,7 +72,7 @@ int main() {
     strcpy(pck->data, clientData[2].c_str());
     pck->len = clientData[2].size();
 
-    // send the packet data directly for now
+    // send the packet data directly to the server
     if ((sendto(sock_fd, pck->data, pck->len, 0,
                 (struct sockaddr *)&serv_addr, sizeof(serv_addr))) == -1) {
         printf("\n Error: sendto \n");
@@ -99,6 +100,7 @@ void receiveServerData() {
         cout << "Cannot open file!" << endl;
         return;
     }
+    vector<packet> packetsBuffer(WINDOWSIZE);
     uint16_t recv_base = 0;
     while (true) {
         fromlen = sizeof serv_addr;
@@ -112,15 +114,29 @@ void receiveServerData() {
             break;
         }
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
-        if (packet.seqno <= recv_base) {
+
+        if (packet.seqno >= recv_base-WINDOWSIZE && packet.seqno < recv_base) {
             // duplicate pck
             ack.ackno = recv_base + 1;
-        } else {
-            // write received data
+        }
+        else if (packet.seqno > recv_base && packet.seqno < recv_base+WINDOWSIZE) {
+            // out-of-order packet
+            packetsBuffer[packet.seqno % WINDOWSIZE] = packet;
+            ackedPackets[packet.seqno % WINDOWSIZE] = true;
+            ack.ackno = packet.seqno + 1;
+        }
+        else {
+            // deliver buffered-in-order packets
             wf.write(packet.data, packet.len);
-            wf.flush();
             ack.ackno = packet.seqno + 1;
             recv_base = packet.seqno;
+            while (ackedPackets[(recv_base+1)%WINDOWSIZE]) {
+                recv_base++;
+                ackedPackets[recv_base%WINDOWSIZE] = false;
+                wf.write(packetsBuffer[recv_base%WINDOWSIZE].data,
+                         packetsBuffer[recv_base%WINDOWSIZE].len);
+            }
+            wf.flush();
         }
         // Send acknowledgement after receiving and consuming a data packet
         ack.len = 0;
