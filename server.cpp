@@ -92,7 +92,7 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     // Send the message to the client
     vector<packet> packets = readFile(fileName);
     unsigned int n = packets.size();
-    for (int i = 0; i< n ; i ++) {
+    for (int i = 0; i < n ; i++) {
         sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
                    (sockaddr*) &client_address, sizeof(client_address));
 

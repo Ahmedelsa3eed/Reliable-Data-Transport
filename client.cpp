@@ -124,7 +124,6 @@ void receiveServerData() {
         }
         // Send acknowledgement after receiving and consuming a data packet
         ack.len = 0;
-        sleep(10);
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();
