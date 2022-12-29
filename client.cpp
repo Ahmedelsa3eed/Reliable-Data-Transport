@@ -99,9 +99,11 @@ void receiveServerData() {
         cout << "Cannot open file!" << endl;
         return;
     }
+    uint16_t recv_base = 0;
     while (true) {
         fromlen = sizeof serv_addr;
         packet packet;
+        ack_packet ack;
         // receive data in buffer
         if ((byte_count = recvfrom(sock_fd, &packet, sizeof(packet) , 0,
                                 (struct sockaddr *)&serv_addr, &fromlen)) < 1)
@@ -110,18 +112,19 @@ void receiveServerData() {
             break;
         }
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
-        // write received data
-        wf.write(packet.data, packet.len);
-        wf.flush();
-        ack_packet ack;
-        ack.ackno = packet.seqno+1;
+        if (packet.seqno <= recv_base) {
+            // duplicate pck
+            ack.ackno = recv_base + 1;
+        } else {
+            // write received data
+            wf.write(packet.data, packet.len);
+            wf.flush();
+            ack.ackno = packet.seqno + 1;
+            recv_base = packet.seqno;
+        }
+        // Send acknowledgement after receiving and consuming a data packet
         ack.len = 0;
-//        int t;
-//        if (ack.ackno == 97 && t!= -1) {
-//            sleep(10);
-//            t = -1;
-//            continue;
-//        }
+        sleep(10);
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();

@@ -171,7 +171,7 @@ int main() {
         messageArgs.client_address = client_addr;
         string str;
         str = buffer;
-        messageArgs.filePath = str.substr(0,bytes_received);
+        messageArgs.filePath = str.substr(0, bytes_received);
         pthread_t thread;
         pthread_create(&thread, nullptr, reinterpret_cast<void *(*)(void *)>(handle_connection), &messageArgs);
     }
