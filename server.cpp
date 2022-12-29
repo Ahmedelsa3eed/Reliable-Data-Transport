@@ -7,19 +7,22 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
-using namespace std;
-const int TIMEOUT_SECONDS = 5;
+#define MSS 16 // Maximum Segment Size
 
+using namespace std;
+
+const int TIMEOUT_SECONDS = 5;
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
+
 typedef struct packet {
     /* Header */
     uint16_t chsum;
     uint16_t len;
     uint16_t seqno;
     /* Data */
-    char data[16];
-}packet;
+    char data[MSS];
+} packet;
 
 typedef struct ack_packet {
     uint16_t chsum;
@@ -29,12 +32,10 @@ typedef struct ack_packet {
 
 typedef struct MessageArgs {
     sockaddr_in client_address{};
-    std::string filePath;
-}MessageArgs;
+    string filePath;
+} MessageArgs;
 
-
-
-packet make_packet(uint16_t seqno, uint16_t len,char data[]) {
+packet make_packet(uint16_t seqno, uint16_t len, char data[]) {
     packet p;
     p.chsum = 0;
     p.len = len;
@@ -42,13 +43,11 @@ packet make_packet(uint16_t seqno, uint16_t len,char data[]) {
     strcpy(p.data, data);
     return p;
 }
-/**
- * reads the contents of a file into a vector of packet structs
- * */
-std::vector<packet> readFile(char *fileName)
-{
+
+// read the contents of a file into a vector of packet structs
+vector<packet> readFile(char *fileName) {
     FILE *fp;
-    std::vector<packet> packets;
+    vector<packet> packets;
     char *content = (char *)malloc(10000);
     fp = fopen(fileName, "rb");
     if (fp == nullptr)
@@ -58,8 +57,8 @@ std::vector<packet> readFile(char *fileName)
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
         seqno++;
-        if(nBytes == 16) {
-            packet p = make_packet(seqno, nBytes,content);
+        if (nBytes == MSS) {
+            packet p = make_packet(seqno, nBytes, content);
             packets.push_back(p);
             nBytes = 0;
         }
@@ -72,9 +71,8 @@ std::vector<packet> readFile(char *fileName)
     free(content);
     return packets;
 }
-/**
- * wait for a specified amount of time for a socket to become readable
- * */
+
+// wait for a specified amount of time for a socket to become readable
 int timeOut(int sockfd) {
     fd_set read_fds;
     FD_ZERO(&read_fds);
@@ -89,9 +87,10 @@ int timeOut(int sockfd) {
 
     return status;
 }
-void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
+
+void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     // Send the message to the client
-    std::vector<packet> packets = readFile(fileName);
+    vector<packet> packets = readFile(fileName);
     unsigned int n = packets.size();
     for (int i = 0; i< n ; i ++) {
         sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
@@ -103,21 +102,20 @@ void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
         int status = timeOut(sockfd);
         if (status == -1) {
             // An error occurred
-            std::cerr << "Error waiting for socket: " << strerror(errno) << std::endl;
+            cerr << "Error waiting for socket: " << strerror(errno) << endl;
             return ;
         } else if (status == 0) {
             // The timeout expired
-            std::cerr << "Timeout expired" << std::endl;
+            cerr << "Timeout expired" << endl;
             i--;
         } else {
-            long bytes_received = recvfrom(sockfd, &ack, sizeof(ack), 0, (sockaddr *) &client_address,
-                                           &client_addr_len);
+            long bytes_received = recvfrom(sockfd, &ack, sizeof(ack), 0,
+                        (sockaddr *) &client_address, &client_addr_len);
             if (bytes_received <= 0) {
                 break;
             }
-            std::cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << std::endl;
+            cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << endl;
         }
-
     }
 }
 
@@ -125,26 +123,24 @@ void handle_connection(void* args) {
     // Get the socket and client address from the arguments
     int newSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (newSocket < 0) {
-        std::cerr << "Error creating socket" << std::endl;
+        cerr << "Error creating socket" << endl;
         return ;
     }
 
-        auto* message_args = (MessageArgs*) args;
-        sockaddr_in client_address = message_args->client_address;
-        std::string filePath = message_args->filePath;
-        // should handle the send of data in chunks
-        sendDataChunks(newSocket, client_address , (char *)filePath.c_str());
-        // Close the connection
-        close(newSocket);
-
-
+    auto* message_args = (MessageArgs*) args;
+    sockaddr_in client_address = message_args->client_address;
+    string filePath = message_args->filePath;
+    // should handle the send of data in chunks
+    sendDataChunks(newSocket, client_address, (char *)filePath.c_str());
+    // Close the connection
+    close(newSocket);
 }
 
 int main() {
     // Create a socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        std::cerr << "Error creating socket" << std::endl;
+        cerr << "Error creating socket" << endl;
         return 1;
     }
 
@@ -154,25 +150,26 @@ int main() {
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(PORT);
     if (bind(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error binding socket to port" << std::endl;
+        cerr << "Error binding socket to port" << endl;
         return 1;
     }
     while (true) {
         // Wait for a connection
         char buffer[BUFFER_SIZE];
-        std::cout << "Waiting for a connection..." << std::endl;
+        cout << "Server: Waiting for a connection..." << endl;
         sockaddr_in client_addr{};
         socklen_t client_addr_len = sizeof(client_addr);
-        long bytes_received= recvfrom(sockfd, buffer, BUFFER_SIZE,  0, (sockaddr *) &client_addr, &client_addr_len);
+        long bytes_received= recvfrom(sockfd, buffer, BUFFER_SIZE, 0,
+                    (sockaddr *) &client_addr, &client_addr_len);
         if (bytes_received < 0) {
-            std::cerr << "Error accepting connection" << std::endl;
+            cerr << "Error accepting connection" << endl;
             continue;
         }
 
         // Create a new thread to handle the connection
         MessageArgs messageArgs;
         messageArgs.client_address = client_addr;
-        std::string str;
+        string str;
         str = buffer;
         messageArgs.filePath = str.substr(0,bytes_received);
         pthread_t thread;
