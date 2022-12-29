@@ -63,8 +63,7 @@ int main() {
     
     serv_addr.sin_family = AF_INET; // set to AF_INET to use IPv4
     serv_addr.sin_port = htons(stoi(clientData[1]));
-    if (inet_pton(AF_INET, clientData[0].c_str(), &serv_addr.sin_addr) == -1)
-    {
+    if (inet_pton(AF_INET, clientData[0].c_str(), &serv_addr.sin_addr) == -1) {
         printf("\n Invalid address/ Address not supported \n");
         return -1;
     }
@@ -74,8 +73,7 @@ int main() {
 
     // send the packet data directly for now
     if ((sendto(sock_fd, pck->data, pck->len, 0,
-                (struct sockaddr *)&serv_addr, sizeof(serv_addr))) == -1)
-    {
+                (struct sockaddr *)&serv_addr, sizeof(serv_addr))) == -1) {
         printf("\n Error: sendto \n");
         return -1;
     }

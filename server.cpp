@@ -115,7 +115,7 @@ void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
             if (bytes_received <= 0) {
                 break;
             }
-            std::cout << "Received " << bytes_received << " bytes: " << ack.ackno << std::endl;
+            std::cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << std::endl;
         }
 
     }
