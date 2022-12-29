@@ -1,2 +1,0 @@
-/home/elemary/Desktop/NW Lab 2/Reliable-Data-Transport/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/elemary/Desktop/NW Lab 2/Reliable-Data-Transport/cmake-build-debug/CMakeFiles/rebuild_cache.dir
