@@ -114,27 +114,27 @@ void receiveServerData() {
             break;
         }
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
-
-        if (packet.seqno >= recv_base-WINDOWSIZE && packet.seqno < recv_base) {
+        int packetIndex = packet.seqno / 16;
+        if ( packetIndex >= recv_base-WINDOWSIZE && packetIndex < recv_base ) {
             // duplicate pck
             ack.ackno = recv_base + 1;
         }
-        else if (packet.seqno > recv_base && packet.seqno < recv_base+WINDOWSIZE) {
+        else if ( packetIndex > recv_base && packetIndex < recv_base + WINDOWSIZE ) {
             // out-of-order packet
-            packetsBuffer[packet.seqno % WINDOWSIZE] = packet;
-            ackedPackets[packet.seqno % WINDOWSIZE] = true;
+            packetsBuffer[packetIndex % WINDOWSIZE] = packet;
+            ackedPackets[packetIndex % WINDOWSIZE] = true;
             ack.ackno = packet.seqno + 1;
         }
         else {
             // deliver buffered-in-order packets
             wf.write(packet.data, packet.len);
             ack.ackno = packet.seqno + 1;
-            recv_base = packet.seqno;
-            while (ackedPackets[(recv_base+1)%WINDOWSIZE]) {
-                recv_base++;
+            recv_base = packetIndex + 1;
+            while (ackedPackets[(recv_base) % WINDOWSIZE]) {
                 ackedPackets[recv_base%WINDOWSIZE] = false;
                 wf.write(packetsBuffer[recv_base%WINDOWSIZE].data,
                          packetsBuffer[recv_base%WINDOWSIZE].len);
+                recv_base++;
             }
             wf.flush();
         }

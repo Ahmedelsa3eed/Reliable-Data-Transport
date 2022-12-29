@@ -11,7 +11,7 @@
 #define WINDOWSIZE 4
 
 using namespace std;
-
+pthread_mutex_t lock;
 const int TIMEOUT_SECONDS = 5;
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
@@ -19,6 +19,7 @@ vector<bool> ackedPackets(WINDOWSIZE, false);
 
 typedef struct packet {
     /* Header */
+
     uint16_t chsum;
     uint16_t len;
     uint16_t seqno;
@@ -44,6 +45,15 @@ typedef struct packetHandlerData {
     int handlerId;
 } PacketHandlerData;
 
+
+typedef struct timeOutCalc {
+    clock_t start;
+    int loc;
+    int maxTime;
+    int new_fd;
+} timeOutCalc;
+
+void *calculateTimeOut(void *arg);
 packet make_packet(uint16_t seqno, uint16_t len, char data[]);
 vector<packet> readFile(char *fileName);
 int timeOut(int sockfd);
@@ -119,20 +129,19 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     size_t send_base = 0;
     pthread_t windowThreads[WINDOWSIZE];
 
-    while (true) {
-        for (int i = send_base; i < send_base + WINDOWSIZE &&
-            i < n && !ackedPackets[(i-send_base) % WINDOWSIZE]; i++)
+    for (int i = send_base; i < send_base + WINDOWSIZE && i < n ; i++)
         {
             int idx = (i-send_base) % WINDOWSIZE;
-            PacketHandlerData threadData;
-            threadData.sockfd = sockfd;
-            threadData.pck = packets[i];
-            threadData.client_address = client_address;
-            threadData.handlerId = idx;
+            PacketHandlerData *threadData  = (PacketHandlerData*) malloc(sizeof(PacketHandlerData));
+            threadData->sockfd = sockfd;
+            threadData->pck = packets[i];
+            threadData->client_address = client_address;
+            threadData->handlerId = idx;
 
-            pthread_create(&windowThreads[idx], NULL, sendOnePacket, &threadData);
-            if (i == send_base + WINDOWSIZE) { // last iteraion
+            pthread_create(&windowThreads[idx], NULL, sendOnePacket, threadData);
+            if (i == send_base + WINDOWSIZE - 1) { // last iteraion
                 pthread_join(windowThreads[send_base % WINDOWSIZE], NULL);
+
                 while (send_base < n && ackedPackets[send_base % WINDOWSIZE]) {
                     ackedPackets[send_base % WINDOWSIZE] = false;
                     send_base++;
@@ -140,10 +149,6 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
             }
         }
 
-        // base case
-        if (send_base + 1 == n)
-            break;
-    }
 }
 
 // read the contents of a file into a vector of packet structs
@@ -158,9 +163,9 @@ vector<packet> readFile(char *fileName) {
     int seqno = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
-        seqno++;
         if (nBytes == MSS) {
             packet p = make_packet(seqno, nBytes, content);
+            seqno+=nBytes;
             packets.push_back(p);
             nBytes = 0;
         }
@@ -203,16 +208,18 @@ void *sendOnePacket(void *arg) {
     PacketHandlerData *data = (PacketHandlerData *) arg;
 
     // wait acknowledgement from client
-    int status = timeOut(data->sockfd);
     sendto(data->sockfd, &data->pck, sizeof(long)*3 + data->pck.len, 0,
            (sockaddr *)&data->client_address, sizeof(data->client_address));
-    
-    if (status == -1) {
-        // An error occurred
-        cerr << "Error waiting for socket: " << strerror(errno) << endl;
-        return NULL;
-    }
-    else if (status == 0) {
+    timeOutCalc *timeOut = (timeOutCalc *) malloc(sizeof(timeOutCalc)) ;
+    timeOut->start = (clock_t) clock();
+    timeOut->loc = 0;
+    timeOut->maxTime = TIMEOUT_SECONDS;
+    timeOut->new_fd = data->sockfd;
+
+    pthread_t timeOutThread;
+    pthread_create(&timeOutThread, NULL, calculateTimeOut, timeOut);
+
+    if (timeOut->start == -1) {
         // The timeout expired
         cerr << "Timeout expired" << endl;
         sendto(data->sockfd, &data->pck, sizeof(long)*3 + data->pck.len, 0,
@@ -229,5 +236,29 @@ void *sendOnePacket(void *arg) {
         cout << "Received " << bytes_received << " bytes: "
              << "with ackno: " << ack.ackno << endl;
     }
+    free(data);
     return NULL;
+}
+
+void *calculateTimeOut(void *arg)
+{
+    timeOutCalc *timeOut = (timeOutCalc *)arg;
+    clock_t start = timeOut->start;
+
+    while ((double)((clock_t)clock() - timeOut->start) / CLOCKS_PER_SEC < timeOut->maxTime)
+    {    /// wait for x seconds to get the request from the client
+
+        if (timeOut->loc == 1) { /// if the request is received
+            printf("[+] server receive request from client %d\n", timeOut->new_fd);
+            while (timeOut->loc == 1) {
+                /// wait for the client to send the request
+            }
+            /// start get updated in the client thread and the same for the loc
+        }
+    }
+
+    printf("[+] Waited for %f seconds, close the connection with %d\n", (double)(clock() - start) / CLOCKS_PER_SEC, timeOut->new_fd);
+    timeOut->start = -1;
+
+    pthread_exit(NULL); /// exit the thread
 }
