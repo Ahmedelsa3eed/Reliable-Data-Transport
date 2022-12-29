@@ -118,6 +118,12 @@ void receiveServerData() {
         ack_packet ack;
         ack.ackno = packet.seqno+1;
         ack.len = 0;
+//        int t;
+//        if (ack.ackno == 97 && t!= -1) {
+//            sleep(10);
+//            t = -1;
+//            continue;
+//        }
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     }
     wf.close();
