@@ -12,7 +12,7 @@
 using namespace std;
 
 const int TIMEOUT_SECONDS = 5;
-double PLP = 0.2; // Packet Loss Probability
+double PLP = 0.4; // Packet Loss Probability
 
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
