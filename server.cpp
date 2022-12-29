@@ -2,102 +2,154 @@
 #include <string>
 #include <cstring>
 #include <thread>
-#include <chrono>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <vector>
+using namespace std;
+const int TIMEOUT_SECONDS = 5;
 
 const int PORT = 8080;
-const int BACKLOG = 5;
 const int BUFFER_SIZE = 16;
-const int TIMEOUT = 5;  // timeout in seconds
 typedef struct packet {
     /* Header */
-    long chsum;
-    long len;
-    long seqno;
+    uint16_t chsum;
+    uint16_t len;
+    uint16_t seqno;
     /* Data */
-    char data[500];
+    char data[16];
 }packet;
 
 typedef struct ack_packet {
-    long chsum;
-    long len;
-    long ackno;
+    uint16_t chsum;
+    uint16_t ackno;
+    uint16_t len;
 } ack_packet;
 
-packet make_packet(long seqno, const std::string data) {
+typedef struct MessageArgs {
+    sockaddr_in client_address{};
+    std::string filePath;
+}MessageArgs;
+
+
+
+packet make_packet(uint16_t seqno, uint16_t len,char data[]) {
     packet p;
     p.chsum = 0;
-    p.len = data.length();
+    p.len = len;
     p.seqno = seqno;
-    strcpy(p.data, data.c_str());
+    strcpy(p.data, data);
     return p;
 }
-char *readFile(char *fileName)
+/**
+ * reads the contents of a file into a vector of packet structs
+ * */
+std::vector<packet> readFile(char *fileName)
 {
     FILE *fp;
+    std::vector<packet> packets;
     char *content = (char *)malloc(10000);
     fp = fopen(fileName, "rb");
-    if (fp == NULL)
-        return NULL;
-    unsigned int nBytes = 0;
+    if (fp == nullptr)
+        return packets;
+    int nBytes = 0;
+    int seqno = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
+        seqno++;
+        if(nBytes == 16) {
+            packet p = make_packet(seqno, nBytes,content);
+            packets.push_back(p);
+            nBytes = 0;
+        }
+    }
+    if (nBytes != 0) {
+        packet p = make_packet(seqno, nBytes,content);
+        packets.push_back(p);
     }
     fclose(fp);
-    return content;
+    free(content);
+    return packets;
 }
-void sendDataChunks(int client_fd, char *fileName) {
-    // Send the message to the client
-    std::string  message = readFile(fileName);
+/**
+ * wait for a specified amount of time for a socket to become readable
+ * */
+int timeOut(int sockfd) {
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(sockfd, &read_fds);
+    // Set up the timeout
+    struct timeval timeout{};
+    timeout.tv_sec = TIMEOUT_SECONDS;
+    timeout.tv_usec = 0;
 
-    for (int i = 0; i< message.length() ; i += BUFFER_SIZE) {
-        if ( i + BUFFER_SIZE > message.length()) {
-            send(client_fd, message.c_str() + i, message.length() - i, 0);
-        }
-        else {
-            send(client_fd, message.c_str() + i, BUFFER_SIZE, 0);
-        }
+    // Wait for the socket to become readable or for the timeout to expire
+    int status = select(sockfd + 1, &read_fds, nullptr, nullptr, &timeout);
+
+    return status;
+}
+void sendDataChunks(int sockfd, sockaddr_in client_address , char *fileName) {
+    // Send the message to the client
+    std::vector<packet> packets = readFile(fileName);
+    unsigned int n = packets.size();
+    for (int i = 0; i< n ; i ++) {
+        sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
+                   (sockaddr*) &client_address, sizeof(client_address));
 
         // wait acknowledgement from client
-        char buffer[BUFFER_SIZE];
-        int bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
-        if (bytes_received <= 0) {
-            break;
+        ack_packet ack;
+        socklen_t client_addr_len = sizeof(client_address);
+        int status = timeOut(sockfd);
+        if (status == -1) {
+            // An error occurred
+            std::cerr << "Error waiting for socket: " << strerror(errno) << std::endl;
+            return ;
+        } else if (status == 0) {
+            // The timeout expired
+            std::cerr << "Timeout expired" << std::endl;
+            i--;
+        } else {
+            long bytes_received = recvfrom(sockfd, &ack, sizeof(ack), 0, (sockaddr *) &client_address,
+                                           &client_addr_len);
+            if (bytes_received <= 0) {
+                break;
+            }
+            std::cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << std::endl;
         }
-        std::cout << "Received " << bytes_received << " bytes: " << buffer << std::endl;
-
 
     }
 }
 
-void handle_connection(int client_fd) {
-    // Receive a message from the client
-    char buffer[BUFFER_SIZE];
-    int bytes_received  = recv(client_fd, buffer, BUFFER_SIZE, 0);
-    if (bytes_received <= 0) {
-        return;
+void handle_connection(void* args) {
+    // Get the socket and client address from the arguments
+    int newSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (newSocket < 0) {
+        std::cerr << "Error creating socket" << std::endl;
+        return ;
     }
-    std::cout << "Received First request " << bytes_received << " bytes: " << buffer << std::endl;
-    // should handle the send of data in chunks
-    sendDataChunks(client_fd, buffer);
 
-    // Close the connection
-    close(client_fd);
+        auto* message_args = (MessageArgs*) args;
+        sockaddr_in client_address = message_args->client_address;
+        std::string filePath = message_args->filePath;
+        // should handle the send of data in chunks
+        sendDataChunks(newSocket, client_address , (char *)filePath.c_str());
+        // Close the connection
+        close(newSocket);
+
+
 }
 
 int main() {
     // Create a socket
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
         std::cerr << "Error creating socket" << std::endl;
         return 1;
     }
 
     // Bind the socket to the port
-    sockaddr_in server_addr;
+    sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(PORT);
@@ -105,31 +157,26 @@ int main() {
         std::cerr << "Error binding socket to port" << std::endl;
         return 1;
     }
-
-    // Listen for incoming connections
-    if (listen(sockfd, BACKLOG) < 0) {
-        std::cerr << "Error listening for connections" << std::endl;
-        return 1;
-    }
-
     while (true) {
         // Wait for a connection
+        char buffer[BUFFER_SIZE];
         std::cout << "Waiting for a connection..." << std::endl;
-        sockaddr_in client_addr;
+        sockaddr_in client_addr{};
         socklen_t client_addr_len = sizeof(client_addr);
-        int client_fd = accept(sockfd, (sockaddr*)&client_addr, &client_addr_len);
-        if (client_fd < 0) {
+        long bytes_received= recvfrom(sockfd, buffer, BUFFER_SIZE,  0, (sockaddr *) &client_addr, &client_addr_len);
+        if (bytes_received < 0) {
             std::cerr << "Error accepting connection" << std::endl;
             continue;
         }
 
         // Create a new thread to handle the connection
-        std::thread t(handle_connection, client_fd);
-        t.detach();
+        MessageArgs messageArgs;
+        messageArgs.client_address = client_addr;
+        std::string str;
+        str = buffer;
+        messageArgs.filePath = str.substr(0,bytes_received);
+        pthread_t thread;
+        pthread_create(&thread, nullptr, reinterpret_cast<void *(*)(void *)>(handle_connection), &messageArgs);
     }
 
-    // Close the socket
-    close(sockfd);
-
-    return 0;
 }
