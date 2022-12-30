@@ -117,7 +117,13 @@ void receiveServerData() {
         packet packet;
         memcpy(&packet, &packetBuffer, sizeof(packet));
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
+
         int packetIndex = packet.seqno / 16;
+        cout << "packetIndex: " << packetIndex << " Receive base: " << recv_base << endl;
+        if (packetIndex - 3 > recv_base) {
+            cerr<<" !!! Packet out of order expected max: "<<recv_base + 3<<" but got: "<<packetIndex<<endl;
+            continue;
+        }
         ack.ackno = packet.seqno + 1;
         if ( packetIndex > recv_base && packetIndex < recv_base + WINDOWSIZE ) {
             // out-of-order packet

@@ -14,7 +14,7 @@ using namespace std;
 pthread_mutex_t lock;
 const int TIMEOUT_SECONDS = 0;
 const int TIMEOUT_MICROSECONDS = 2*1000;
-double PLP = 0.4; // Packet Loss Probability
+double PLP = 0.99; // Packet Loss Probability
 
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
@@ -22,7 +22,6 @@ vector<bool> ackedPackets(WINDOWSIZE, false);
 
 typedef struct packet {
     /* Header */
-
     uint16_t chsum;
     uint16_t len;
     uint16_t seqno;
@@ -136,6 +135,7 @@ void sendDataChunks( sockaddr_in client_address, char *fileName) {
 
             pthread_create(&windowThreads[idx], nullptr, sendOnePacket, threadData);
             if (i == send_base + WINDOWSIZE - 1) { // last iteraion
+                cout<< "Waiting for acks of thread "<< send_base % WINDOWSIZE << endl;
                 pthread_join(windowThreads[send_base % WINDOWSIZE], nullptr);
                 while ( send_base < n && ackedPackets[ send_base % WINDOWSIZE ]) {
                     pthread_mutex_lock(&lock);
@@ -206,11 +206,10 @@ void *sendOnePacket(void *arg) {
     auto *data = (PacketHandlerData *) arg;
 
     if ( (double)( rand() % 100 ) / 100.0 < PLP) {
-        printf("Packet %d lost\n", data->pck.seqno);
         int status = timeOut(data->sockfd);
         if (status == 0) {
-            cout << "Timeout for packet : " << data->pck.seqno << endl;
-            sendOnePacket(data);
+            printf("Timeout for packet %d \n", data->pck.seqno);
+            return sendOnePacket(data);
         } else if (status == -1) {
             cout << " Select error" << endl;
         }
@@ -220,7 +219,7 @@ void *sendOnePacket(void *arg) {
                (sockaddr *) &data->client_address, sizeof(data->client_address));
         int status = timeOut(data->sockfd);
         if (status == 0) {
-            cout << "Timeout for packet " << data->pck.seqno << endl;
+            cout << "Timeout for packet " << data->pck.seqno <<"Packet sent without receiving ACK "<<endl;
         } else if (status == -1) {
             cout << " Select error" << endl;
         } else {
