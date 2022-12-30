@@ -58,7 +58,7 @@ packet make_packet(uint16_t seqno, uint16_t len, char data[]);
 vector<packet> readFile(char *fileName);
 int timeOut(int sockfd);
 void handle_connection(void* args);
-void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName);
+void sendDataChunks(sockaddr_in client_address, char *fileName);
 void *sendOnePacket(void *arg);
 
 int main() {
@@ -107,45 +107,41 @@ int main() {
 
 void handle_connection(void* args) {
     // Get the socket and client address from the arguments
-    int newSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (newSocket < 0) {
-        cerr << "Error creating socket" << endl;
-        return ;
-    }
-
     auto* message_args = (MessageArgs*) args;
     sockaddr_in client_address = message_args->client_address;
     string filePath = message_args->filePath;
     // should handle the send of data in chunks
-    sendDataChunks(newSocket, client_address, (char *)filePath.c_str());
+    sendDataChunks( client_address, (char *)filePath.c_str());
     // Close the connection
-    close(newSocket);
 }
 
 // Send the packets to the client
-void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
+void sendDataChunks( sockaddr_in client_address, char *fileName) {
     vector<packet> packets = readFile(fileName);
     size_t n = packets.size();
-    size_t send_base = 0;
+    int send_base = 0;
     pthread_t windowThreads[WINDOWSIZE];
 
-    for (int i = send_base; i < send_base + WINDOWSIZE && i < n ; i++)
+    for (int i = send_base; i < n ; i++)
         {
+            cout<< "[Sending packet]--" << i << endl;
             int idx = (i-send_base) % WINDOWSIZE;
-            PacketHandlerData *threadData  = (PacketHandlerData*) malloc(sizeof(PacketHandlerData));
-            threadData->sockfd = sockfd;
+            auto *threadData  = (PacketHandlerData*) malloc(sizeof(PacketHandlerData));
+            threadData->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             threadData->pck = packets[i];
             threadData->client_address = client_address;
             threadData->handlerId = idx;
 
-            pthread_create(&windowThreads[idx], NULL, sendOnePacket, threadData);
+            pthread_create(&windowThreads[idx], nullptr, sendOnePacket, threadData);
             if (i == send_base + WINDOWSIZE - 1) { // last iteraion
-                pthread_join(windowThreads[send_base % WINDOWSIZE], NULL);
-
-                while (send_base < n && ackedPackets[send_base % WINDOWSIZE]) {
+                pthread_join(windowThreads[send_base % WINDOWSIZE], nullptr);
+                while ( send_base < n && ackedPackets[ send_base % WINDOWSIZE ]) {
+                    pthread_mutex_lock(&lock);
                     ackedPackets[send_base % WINDOWSIZE] = false;
+                    pthread_mutex_unlock(&lock);
                     send_base++;
                 }
+                cout << "send_base: " << send_base << endl;
             }
         }
 
@@ -205,39 +201,33 @@ int timeOut(int sockfd) {
 }
 
 void *sendOnePacket(void *arg) {
-    PacketHandlerData *data = (PacketHandlerData *) arg;
+
+    auto *data = (PacketHandlerData *) arg;
 
     // wait acknowledgement from client
     sendto(data->sockfd, &data->pck, sizeof(long)*3 + data->pck.len, 0,
            (sockaddr *)&data->client_address, sizeof(data->client_address));
-    timeOutCalc *timeOut = (timeOutCalc *) malloc(sizeof(timeOutCalc)) ;
-    timeOut->start = (clock_t) clock();
-    timeOut->loc = 0;
-    timeOut->maxTime = TIMEOUT_SECONDS;
-    timeOut->new_fd = data->sockfd;
-
-    pthread_t timeOutThread;
-    pthread_create(&timeOutThread, NULL, calculateTimeOut, timeOut);
-
-    if (timeOut->start == -1) {
-        // The timeout expired
-        cerr << "Timeout expired" << endl;
-        sendto(data->sockfd, &data->pck, sizeof(long)*3 + data->pck.len, 0,
-               (sockaddr *)&data->client_address, sizeof(data->client_address));
-    }
-    else {
+    cout<< "Sent packet " << data->pck.seqno/16 << endl;
+     int status = timeOut(data->sockfd);
+    if (status == 0 ){
+        cout<< "Timeout for packet "<< data->pck.seqno<<endl;
+    } else if (status == -1){
+        cout<< " Select error"<< endl;
+    } else {
         ack_packet ack;
         socklen_t client_addr_len = sizeof(data->client_address);
         ssize_t bytes_received = recvfrom(data->sockfd, &ack, sizeof(ack), 0,
-                                       (sockaddr *)&data->client_address, &client_addr_len);
+                                          (sockaddr *) &data->client_address, &client_addr_len);
         if (bytes_received <= 0)
-            return NULL;
+            return nullptr;
+        pthread_mutex_lock(&lock);
         ackedPackets[data->handlerId] = true;
-        cout << "Received " << bytes_received << " bytes: "
-             << "with ackno: " << ack.ackno << endl;
+        pthread_mutex_unlock(&lock);
+
+        cout << "Received " << bytes_received << " bytes: " << ack.ackno << endl;
     }
     free(data);
-    return NULL;
+    return nullptr;
 }
 
 void *calculateTimeOut(void *arg)

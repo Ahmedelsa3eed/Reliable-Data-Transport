@@ -104,31 +104,29 @@ void receiveServerData() {
     uint16_t recv_base = 0;
     while (true) {
         fromlen = sizeof serv_addr;
-        packet packet;
+        packet packetBuffer;
         ack_packet ack;
         // receive data in buffer
-        if ((byte_count = recvfrom(sock_fd, &packet, sizeof(packet) , 0,
+        if ((byte_count = recvfrom(sock_fd, &packetBuffer, sizeof(packet) , 0,
                                 (struct sockaddr *)&serv_addr, &fromlen)) < 1)
         {
             printf("revfrom finished \n");
             break;
         }
+
+        packet packet;
+        memcpy(&packet, &packetBuffer, sizeof(packet));
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
         int packetIndex = packet.seqno / 16;
-        if ( packetIndex >= recv_base-WINDOWSIZE && packetIndex < recv_base ) {
-            // duplicate pck
-            ack.ackno = recv_base + 1;
-        }
-        else if ( packetIndex > recv_base && packetIndex < recv_base + WINDOWSIZE ) {
+        ack.ackno = packet.seqno + 1;
+        if ( packetIndex > recv_base && packetIndex < recv_base + WINDOWSIZE ) {
             // out-of-order packet
             packetsBuffer[packetIndex % WINDOWSIZE] = packet;
             ackedPackets[packetIndex % WINDOWSIZE] = true;
-            ack.ackno = packet.seqno + 1;
         }
-        else {
+        else if ( packetIndex == recv_base ) {
             // deliver buffered-in-order packets
             wf.write(packet.data, packet.len);
-            ack.ackno = packet.seqno + 1;
             recv_base = packetIndex + 1;
             while (ackedPackets[(recv_base) % WINDOWSIZE]) {
                 ackedPackets[recv_base%WINDOWSIZE] = false;
