@@ -12,8 +12,9 @@
 
 using namespace std;
 pthread_mutex_t lock;
-double TIMEOUT_SECONDS = 0.2;
-double PLP = 0.1; // Packet Loss Probability
+const int TIMEOUT_SECONDS = 0;
+const int TIMEOUT_MICROSECONDS = 2*1000;
+double PLP = 0.4; // Packet Loss Probability
 
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
@@ -192,7 +193,7 @@ int timeOut(int sockfd) {
     // Set up the timeout
     struct timeval timeout{};
     timeout.tv_sec = TIMEOUT_SECONDS;
-    timeout.tv_usec = 0;
+    timeout.tv_usec = TIMEOUT_MICROSECONDS;
 
     // Wait for the socket to become readable or for the timeout to expire
     int status = select(sockfd + 1, &read_fds, nullptr, nullptr, &timeout);
