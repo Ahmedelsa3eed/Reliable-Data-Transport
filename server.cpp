@@ -11,7 +11,7 @@
 
 using namespace std;
 
-const int TIMEOUT_SECONDS = 5;
+const int TIMEOUT_SECONDS = 1;
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
 
@@ -56,10 +56,10 @@ vector<packet> readFile(char *fileName) {
     int seqno = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
-        seqno++;
         if (nBytes == MSS) {
             packet p = make_packet(seqno, nBytes, content);
             packets.push_back(p);
+            seqno = seqno == 0 ? 1 : 0;
             nBytes = 0;
         }
     }
