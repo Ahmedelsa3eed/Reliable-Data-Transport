@@ -12,8 +12,8 @@
 
 using namespace std;
 pthread_mutex_t lock;
-const int TIMEOUT_SECONDS = 5;
-double PLP = 0.4; // Packet Loss Probability
+double TIMEOUT_SECONDS = 0.2;
+double PLP = 0.1; // Packet Loss Probability
 
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
