@@ -7,12 +7,17 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
+#include <fstream>
 #define MSS 16 // Maximum Segment Size
 
 using namespace std;
 
-const int TIMEOUT_SECONDS = 5;
-const int PORT = 8080;
+const int TIMEOUT_SECONDS = 0;
+const int TIMEOUT_MICROSECONDS = 500000; // 500(ms)
+unsigned int SEED = 1;
+double PLP = 0.6; // Packet Loss Probability
+
+int PORT = 8080; // default port number
 const int BUFFER_SIZE = 16;
 
 typedef struct packet {
@@ -56,10 +61,10 @@ vector<packet> readFile(char *fileName) {
     int seqno = 0;
     while (fread(&content[nBytes], sizeof(char), 1, fp) == 1) {
         nBytes++;
-        seqno++;
         if (nBytes == MSS) {
             packet p = make_packet(seqno, nBytes, content);
             packets.push_back(p);
+            seqno = seqno == 0 ? 1 : 0;
             nBytes = 0;
         }
     }
@@ -80,7 +85,7 @@ int timeOut(int sockfd) {
     // Set up the timeout
     struct timeval timeout{};
     timeout.tv_sec = TIMEOUT_SECONDS;
-    timeout.tv_usec = 0;
+    timeout.tv_usec = TIMEOUT_MICROSECONDS;
 
     // Wait for the socket to become readable or for the timeout to expire
     int status = select(sockfd + 1, &read_fds, nullptr, nullptr, &timeout);
@@ -88,12 +93,25 @@ int timeOut(int sockfd) {
     return status;
 }
 
+bool dropPacket() {
+    return ((double)(rand() % 100) / 100.0) < PLP;
+}
+
 void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     // Send the message to the client
+    clock_t start = std::clock();
+    int nBytes = 0;
     vector<packet> packets = readFile(fileName);
     unsigned int n = packets.size();
     for (int i = 0; i < n ; i++) {
-        sendto(sockfd, &packets[i], sizeof(long)*3+packets[i].len, 0,
+        int packetSize = sizeof(long)*3+packets[i].len;
+        if ( dropPacket() ) {
+            printf("Packet %d lost\n", i);
+            i--;
+            continue;
+        }
+        nBytes+=packetSize;
+        sendto(sockfd, &packets[i],packetSize , 0,
                    (sockaddr*) &client_address, sizeof(client_address));
 
         // wait acknowledgement from client
@@ -117,6 +135,12 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
             cout << "Received " << bytes_received << " bytes: " << "with ackno: " << ack.ackno << endl;
         }
     }
+
+    clock_t end = std::clock();
+    double elapsed_secs = double(end - start) / CLOCKS_PER_SEC;
+    printf("Time taken: %f Sec\n", elapsed_secs);
+    printf("Number of bytes sent: %d Byte\n", nBytes);
+    printf("Throughput: %f Bytes/sec\n", nBytes/elapsed_secs);
 }
 
 void handle_connection(void* args) {
@@ -136,7 +160,27 @@ void handle_connection(void* args) {
     close(newSocket);
 }
 
+void getServerArguments() {
+    string line;
+    ifstream file("server.in");
+    
+    getline(file, line);
+    PORT = stoi(line);
+    
+    getline(file, line);
+    SEED = stoi(line);
+    
+    getline(file, line);
+    PLP = stod(line);
+    
+    file.close();
+}
+
 int main() {
+    srand(time(0)); // should only be seeded once0
+    
+    getServerArguments();
+
     // Create a socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {

@@ -43,7 +43,6 @@ packet *pck;
 char buffer[MAXDATASIZE];
 
 void readClientData();
-void writeServerData();
 void receiveServerData();
 
 int main() {
@@ -99,7 +98,7 @@ void receiveServerData() {
         cout << "Cannot open file!" << endl;
         return;
     }
-    uint16_t recv_base = 0;
+    int expected_packet_num = 0;
     while (true) {
         fromlen = sizeof serv_addr;
         packet packet;
@@ -112,16 +111,17 @@ void receiveServerData() {
             break;
         }
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
-        if (packet.seqno <= recv_base) {
+        if (packet.seqno != expected_packet_num) {
             // duplicate pck
-            ack.ackno = recv_base + 1;
+            ack.ackno = packet.seqno;
         } else {
             // write received data
             wf.write(packet.data, packet.len);
             wf.flush();
-            ack.ackno = packet.seqno + 1;
-            recv_base = packet.seqno;
+            ack.ackno = packet.seqno;
+            expected_packet_num = expected_packet_num == 0 ? 1 : 0;
         }
+        // sleep(2); // to test ACK loss
         // Send acknowledgement after receiving and consuming a data packet
         ack.len = 0;
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
