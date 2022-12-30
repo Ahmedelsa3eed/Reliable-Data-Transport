@@ -7,14 +7,17 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
+#include <fstream>
 #define MSS 16 // Maximum Segment Size
 
 using namespace std;
 
-const int TIMEOUT_SECONDS = 5;
-double PLP = 0.4; // Packet Loss Probability
+const int TIMEOUT_SECONDS = 0;
+const int TIMEOUT_MICROSECONDS = 500000; // 500(ms)
+unsigned int SEED = 1;
+double PLP = 0.6; // Packet Loss Probability
 
-const int PORT = 8080;
+int PORT = 8080; // default port number
 const int BUFFER_SIZE = 16;
 
 typedef struct packet {
@@ -82,12 +85,16 @@ int timeOut(int sockfd) {
     // Set up the timeout
     struct timeval timeout{};
     timeout.tv_sec = TIMEOUT_SECONDS;
-    timeout.tv_usec = 0;
+    timeout.tv_usec = TIMEOUT_MICROSECONDS;
 
     // Wait for the socket to become readable or for the timeout to expire
     int status = select(sockfd + 1, &read_fds, nullptr, nullptr, &timeout);
 
     return status;
+}
+
+bool dropPacket() {
+    return ((double)(rand() % 100) / 100.0) < PLP;
 }
 
 void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
@@ -98,7 +105,7 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     unsigned int n = packets.size();
     for (int i = 0; i < n ; i++) {
         int packetSize = sizeof(long)*3+packets[i].len;
-        if ( (double)( rand() % 100 ) / 100.0 < PLP) {
+        if ( dropPacket() ) {
             printf("Packet %d lost\n", i);
             i--;
             continue;
@@ -133,7 +140,7 @@ void sendDataChunks(int sockfd, sockaddr_in client_address, char *fileName) {
     double elapsed_secs = double(end - start) / CLOCKS_PER_SEC;
     printf("Time taken: %f Sec\n", elapsed_secs);
     printf("Number of bytes sent: %d Byte\n", nBytes);
-    printf("Throughput: %f Bps\n", nBytes/elapsed_secs);
+    printf("Throughput: %f Bytes/sec\n", nBytes/elapsed_secs);
 }
 
 void handle_connection(void* args) {
@@ -153,7 +160,27 @@ void handle_connection(void* args) {
     close(newSocket);
 }
 
+void getServerArguments() {
+    string line;
+    ifstream file("server.in");
+    
+    getline(file, line);
+    PORT = stoi(line);
+    
+    getline(file, line);
+    SEED = stoi(line);
+    
+    getline(file, line);
+    PLP = stod(line);
+    
+    file.close();
+}
+
 int main() {
+    srand(time(0)); // should only be seeded once0
+    
+    getServerArguments();
+
     // Create a socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {

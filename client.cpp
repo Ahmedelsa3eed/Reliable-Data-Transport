@@ -17,7 +17,6 @@
 #define MSS 16 // Maximum Segment Size
 #define MAXDATASIZE 1024 // 1k bytes: max number of bytes we can get at once
 
-
 using namespace std;
 
 typedef struct ack_packet {
@@ -122,7 +121,7 @@ void receiveServerData() {
             ack.ackno = packet.seqno;
             expected_packet_num = expected_packet_num == 0 ? 1 : 0;
         }
-        sleep(2); // to test ACK loss
+        // sleep(2); // to test ACK loss
         // Send acknowledgement after receiving and consuming a data packet
         ack.len = 0;
         sendto(sock_fd, &ack, sizeof(ack), 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
