@@ -6,12 +6,15 @@ Implementing a service that guarantees the arrival of datagrams in the correct o
 
 ## Features
 ### Stop and wait protocol
-To run stop and wait without PLP: ``git checkout v1``
-To run stop and wait with PLP: ``git checkout PLP``
+To run **stop-and-wait** without PLP: ``git checkout v1``  
+To run **stop-and-wait** with PLP: ``git checkout PLP``
 - packet loss simulation at server side
     - A datagram given as a parameter to the ``sendto()`` method is transmitted only ``100*(1 - PLP)%`` of the time
 - client can detect out-of-order packets
     - it sends an ack for the last correctly received packet
+
+### Selective repeat protocol
+To run **selective-repeat** with **congestion control**: ``git checkout addingCongestionControl``
 
 ## Client workflow
 - The client sends a datagram to the server to get a file giving its filename.
@@ -38,3 +41,5 @@ To run stop and wait with PLP: ``git checkout PLP``
       Random generator seed value
       Probability p of datagram loss (real number in the range [ 0.0 , 1.0]
 
+### Congestion analysis
+- Graph for the implemented TCP for the different values of PLP
