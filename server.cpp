@@ -13,12 +13,12 @@
 using namespace std;
 pthread_mutex_t lock;
 const int TIMEOUT_SECONDS = 0;
-const int TIMEOUT_MICROSECONDS = 2*1000;
-double PLP = 0.99; // Packet Loss Probability
+const int TIMEOUT_MICROSECONDS = 2*100000;
+double PLP = 0.4; // Packet Loss Probability
 
 const int PORT = 8080;
 const int BUFFER_SIZE = 16;
-vector<bool> ackedPackets(WINDOWSIZE, false);
+vector<bool> ackedPackets;
 
 typedef struct packet {
     /* Header */
@@ -122,11 +122,11 @@ void sendDataChunks( sockaddr_in client_address, char *fileName) {
     vector<packet> packets = readFile(fileName);
     size_t n = packets.size();
     int send_base = 0;
-    pthread_t windowThreads[WINDOWSIZE];
-
+    pthread_t windowThreads[n];
+    ackedPackets.resize(n, false);
     for (int i = send_base; i < n ; i++)
         {
-            int idx = (i-send_base) % WINDOWSIZE;
+            int idx = (i) ;
             auto *threadData  = (PacketHandlerData*) malloc(sizeof(PacketHandlerData));
             threadData->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             threadData->pck = packets[i];
@@ -135,14 +135,15 @@ void sendDataChunks( sockaddr_in client_address, char *fileName) {
 
             pthread_create(&windowThreads[idx], nullptr, sendOnePacket, threadData);
             if (i == send_base + WINDOWSIZE - 1) { // last iteraion
-                cout<< "Waiting for acks of thread "<< send_base % WINDOWSIZE << endl;
-                pthread_join(windowThreads[send_base % WINDOWSIZE], nullptr);
-                while ( send_base < n && ackedPackets[ send_base % WINDOWSIZE ]) {
-                    pthread_mutex_lock(&lock);
-                    ackedPackets[send_base % WINDOWSIZE] = false;
-                    pthread_mutex_unlock(&lock);
+                printf("THREAD %ld --\033[32m[Waiting]\033[0m Waiting for acks of thread with send base %d \n",pthread_self() ,send_base );
+                pthread_join(windowThreads[send_base], nullptr);
+                pthread_mutex_lock(&lock);
+                while ( send_base < n && ackedPackets[send_base]) {
+                    ackedPackets[send_base] = false;
                     send_base++;
                 }
+                pthread_mutex_unlock(&lock);
+
             }
         }
 
@@ -152,7 +153,7 @@ void sendDataChunks( sockaddr_in client_address, char *fileName) {
 vector<packet> readFile(char *fileName) {
     FILE *fp;
     vector<packet> packets;
-    char *content = (char *)malloc(10000);
+    char content[MSS];
     fp = fopen(fileName, "rb");
     if (fp == nullptr)
         return packets;
@@ -172,7 +173,6 @@ vector<packet> readFile(char *fileName) {
         packets.push_back(p);
     }
     fclose(fp);
-    free(content);
     return packets;
 }
 
@@ -202,40 +202,37 @@ int timeOut(int sockfd) {
 }
 
 void *sendOnePacket(void *arg) {
-
     auto *data = (PacketHandlerData *) arg;
-
     if ( (double)( rand() % 100 ) / 100.0 < PLP) {
+        // wait time out
         int status = timeOut(data->sockfd);
         if (status == 0) {
-            printf("Timeout for packet %d \n", data->pck.seqno);
-            return sendOnePacket(data);
+            printf("THREAD %ld --[Timeout] time out for packet with sequence number %d Packet Loss Due to PLP \n" ,pthread_self() ,data->pck.seqno);
         } else if (status == -1) {
             cout << " Select error" << endl;
         }
+    }
+    // wait acknowledgement from client
+    printf("THREAD %ld --[Send] sent packet with sequence number %d to receiver\n",pthread_self(),data->pck.seqno);
+    sendto(data->sockfd, &data->pck, sizeof(long) * 3 + data->pck.len, 0,
+           (sockaddr *) &data->client_address, sizeof(data->client_address));
+    int status = timeOut(data->sockfd);
+    if (status == 0) {
+        printf("THREAD %ld --[Timeout] time out for packet with sequence number %d Packet sent without receiving ACK \n" , pthread_self() ,data->pck.seqno);
+    } else if (status == -1) {
+        cout << " Select error" << endl;
     } else {
-        // wait acknowledgement from client
-        sendto(data->sockfd, &data->pck, sizeof(long) * 3 + data->pck.len, 0,
-               (sockaddr *) &data->client_address, sizeof(data->client_address));
-        int status = timeOut(data->sockfd);
-        if (status == 0) {
-            cout << "Timeout for packet " << data->pck.seqno <<"Packet sent without receiving ACK "<<endl;
-        } else if (status == -1) {
-            cout << " Select error" << endl;
-        } else {
-            ack_packet ack;
-            socklen_t client_addr_len = sizeof(data->client_address);
-            ssize_t bytes_received = recvfrom(data->sockfd, &ack, sizeof(ack), 0,
-                                              (sockaddr *) &data->client_address, &client_addr_len);
-            if (bytes_received <= 0)
-                return nullptr;
-            pthread_mutex_lock(&lock);
-            ackedPackets[data->handlerId] = true;
-            pthread_mutex_unlock(&lock);
-
-            cout << "Received " << bytes_received << " bytes: " << ack.ackno << endl;
-            free(data);
-        }
+        ack_packet ack;
+        socklen_t client_addr_len = sizeof(data->client_address);
+        ssize_t bytes_received = recvfrom(data->sockfd, &ack, sizeof(ack), 0,
+                                          (sockaddr *) &data->client_address, &client_addr_len);
+        if (bytes_received <= 0)
+            return nullptr;
+        pthread_mutex_lock(&lock);
+        ackedPackets[data->handlerId] = true;
+        pthread_mutex_unlock(&lock);
+        printf("THREAD %ld --[Receive] Received ACK from receiver with acknowledgment number %d\n" ,pthread_self(),data->pck.seqno);
+        free(data);
     }
     return nullptr;
 }
