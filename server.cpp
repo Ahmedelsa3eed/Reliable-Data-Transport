@@ -12,6 +12,7 @@
 
 using namespace std;
 pthread_mutex_t lock;
+pthread_mutex_t congestion_lock;
 const int TIMEOUT_SECONDS = 0;
 const int TIMEOUT_MICROSECONDS = 2*100000;
 double PLP = 0.4; // Packet Loss Probability
@@ -40,12 +41,7 @@ typedef struct MessageArgs {
     string filePath;
 } MessageArgs;
 
-typedef struct packetHandlerData {
-    int sockfd;
-    packet pck;
-    sockaddr_in client_address{};
-    int handlerId;
-} PacketHandlerData;
+
 
 
 typedef struct timeOutCalc {
@@ -54,6 +50,21 @@ typedef struct timeOutCalc {
     int maxTime;
     int new_fd;
 } timeOutCalc;
+
+typedef struct congestionControl{
+    int ssthresh = 64;
+    int cwnd = 1 * MSS;
+    int dupAckCount = 0;
+}congestionControl;
+
+typedef struct packetHandlerData {
+    int sockfd;
+    packet pck;
+    sockaddr_in client_address{};
+    int handlerId;
+    congestionControl *cc;
+
+} PacketHandlerData;
 
 void *calculateTimeOut(void *arg);
 packet make_packet(uint16_t seqno, uint16_t len, char data[]);
@@ -119,11 +130,17 @@ void handle_connection(void* args) {
 
 // Send the packets to the client
 void sendDataChunks( sockaddr_in client_address, char *fileName) {
+
     vector<packet> packets = readFile(fileName);
     size_t n = packets.size();
     int send_base = 0;
     pthread_t windowThreads[n];
     ackedPackets.resize(n, false);
+    auto *cc = ( congestionControl* ) malloc( sizeof(congestionControl));
+    cc->ssthresh = 64;
+    cc->cwnd = 1 * MSS;
+    cc->dupAckCount = 0;
+
     for (int i = send_base; i < n ; i++)
         {
             int idx = (i) ;
@@ -132,9 +149,10 @@ void sendDataChunks( sockaddr_in client_address, char *fileName) {
             threadData->pck = packets[i];
             threadData->client_address = client_address;
             threadData->handlerId = idx;
+            threadData->cc = cc;
 
             pthread_create(&windowThreads[idx], nullptr, sendOnePacket, threadData);
-            if (i == send_base + WINDOWSIZE - 1) { // last iteraion
+            if (i == send_base + cc->cwnd / MSS - 1) { // last iteraion
                 printf("THREAD %ld --\033[32m[Waiting]\033[0m Waiting for acks of thread with send base %d \n",pthread_self() ,send_base );
                 pthread_join(windowThreads[send_base], nullptr);
                 pthread_mutex_lock(&lock);
@@ -208,6 +226,15 @@ void *sendOnePacket(void *arg) {
         int status = timeOut(data->sockfd);
         if (status == 0) {
             printf("THREAD %ld --[Timeout] time out for packet with sequence number %d Packet Loss Due to PLP \n" ,pthread_self() ,data->pck.seqno);
+            printf( "THREAD %ld --\033[33m[Congestion Control]\033[0m when time out occur cwnd = %d ssthresh = %d  before editing congestion data\n",pthread_self() ,data->cc->cwnd, data->cc->ssthresh);
+            pthread_mutex_lock(&congestion_lock);
+            data->cc->ssthresh = data->cc->cwnd / 2;
+            data->cc->cwnd = MSS;
+            data->cc->dupAckCount = 0;
+            printf( "THREAD %ld --\033[33m[Congestion Control]\033[0m when time out occur cwnd = %d ssthresh = %d  after editing congestion data\n\n", pthread_self() ,data->cc->cwnd, data->cc->ssthresh);
+            pthread_mutex_unlock(&congestion_lock);
+
+
         } else if (status == -1) {
             cout << " Select error" << endl;
         }
@@ -219,6 +246,17 @@ void *sendOnePacket(void *arg) {
     int status = timeOut(data->sockfd);
     if (status == 0) {
         printf("THREAD %ld --[Timeout] time out for packet with sequence number %d Packet sent without receiving ACK \n" , pthread_self() ,data->pck.seqno);
+        // This is a timeout for ACK loss
+        pthread_mutex_lock(&congestion_lock);
+        printf( "THREAD %ld --\033[33m[Congestion Control]\033[0m when time out occur cwnd = %d ssthresh = %d  before editing congestion data\n", pthread_self(), data->cc->cwnd, data->cc->ssthresh);
+        data->cc->ssthresh = data->cc->cwnd / 2;
+        data->cc->cwnd = MSS;
+        data->cc->dupAckCount = 0;
+        printf( "THREAD %ld --\033[33m[Congestion Control]\033[0m  when time out occur cwnd = %d ssthresh = %d  after editing congestion data\n", pthread_self(),data->cc->cwnd, data->cc->ssthresh);
+        pthread_mutex_unlock(&congestion_lock);
+
+
+
     } else if (status == -1) {
         cout << " Select error" << endl;
     } else {
@@ -231,6 +269,19 @@ void *sendOnePacket(void *arg) {
         pthread_mutex_lock(&lock);
         ackedPackets[data->handlerId] = true;
         pthread_mutex_unlock(&lock);
+        // Editing congestion control data
+        pthread_mutex_lock(&congestion_lock);
+        printf( "THREAD %ld --\033[33m[Congestion Control]\033[0m when new ACK occur cwnd = %d ssthresh = %d  before editing congestion data\n", pthread_self(),data->cc->cwnd, data->cc->ssthresh);
+        if ( data->cc->cwnd >= data->cc->ssthresh) {
+            data->cc->cwnd = data->cc->cwnd + (MSS * MSS / data->cc->cwnd);
+            printf( "THREAD %ld --\033[33m[Congestion Avoidance]\033[0m cwnd = %d ssthresh = %d  after editing congestion data\n", pthread_self(),data->cc->cwnd, data->cc->ssthresh);
+        } else {
+            data->cc->cwnd = data->cc->cwnd + MSS;
+            printf( "THREAD %ld --\033[33m[Slow Start]\033[0m cwnd = %d ssthresh = %d  after editing congestion data\n", pthread_self(),data->cc->cwnd, data->cc->ssthresh);
+        }
+        data->cc->dupAckCount = 0;
+        pthread_mutex_unlock(&congestion_lock);
+
         printf("THREAD %ld --[Receive] Received ACK from receiver with acknowledgment number %d\n" ,pthread_self(),data->pck.seqno);
         free(data);
     }

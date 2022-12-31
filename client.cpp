@@ -16,7 +16,7 @@
 #include <string.h>
 #define MSS 16 // Maximum Segment Size
 #define MAXDATASIZE 1024 // 1k bytes: max number of bytes we can get at once
-#define WINDOWSIZE 4
+#define WINDOWSIZE 65536 // 64k bytes: max number of bytes we can get at once
 
 using namespace std;
 
@@ -41,7 +41,6 @@ struct sockaddr_in serv_addr;
 socklen_t fromlen;
 vector<string> clientData(3); // <IP, port, filename>
 packet *pck;
-char buffer[MAXDATASIZE];
 vector<bool> ackedPackets(WINDOWSIZE, false);
 
 void readClientData();
@@ -118,9 +117,9 @@ void receiveServerData() {
         memcpy(&packet, &packetBuffer, sizeof(packet));
         printf("Received packet with seqno %d and length %d\n", packet.seqno, packet.len);
 
-        int packetIndex = packet.seqno / 16;
+        int packetIndex = packet.seqno / MSS;
         cout << "packetIndex: " << packetIndex << " Receive base: " << recv_base << endl;
-        if (packetIndex - 3 > recv_base) {
+        if ( packetIndex - WINDOWSIZE-1 > recv_base) {
             cerr<<" !!! Packet out of order expected max: "<<recv_base + 3<<" but got: "<<packetIndex<<endl;
             continue;
         }
@@ -135,9 +134,9 @@ void receiveServerData() {
             wf.write(packet.data, packet.len);
             recv_base = packetIndex + 1;
             while (ackedPackets[(recv_base) % WINDOWSIZE]) {
-                ackedPackets[recv_base%WINDOWSIZE] = false;
-                wf.write(packetsBuffer[recv_base%WINDOWSIZE].data,
-                         packetsBuffer[recv_base%WINDOWSIZE].len);
+                ackedPackets[recv_base % WINDOWSIZE] = false;
+                wf.write(packetsBuffer[recv_base % WINDOWSIZE].data,
+                         packetsBuffer[recv_base % WINDOWSIZE].len);
                 recv_base++;
             }
             wf.flush();
