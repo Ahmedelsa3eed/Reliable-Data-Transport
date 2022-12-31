@@ -47,13 +47,21 @@ To run **selective-repeat** with **congestion control**: ``git checkout addingCo
 
 PLP = 0.01 
 ![image](https://user-images.githubusercontent.com/60315006/210149622-0e7cc3a5-5213-4ee9-a886-48578b530cac.png)
+Bigger file 
+![image](https://user-images.githubusercontent.com/60315006/210150003-830be803-f0cb-4ad4-97ca-392623c34a7b.png)
+
 
 PLP = 0.05
 ![image](https://user-images.githubusercontent.com/60315006/210149691-d1798e4e-1f92-45a1-af9c-8bad546ef307.png)
+Bigger file 
+![image](https://user-images.githubusercontent.com/60315006/210150038-829c0c45-7e3f-47e5-9b1e-7ffb4612ab64.png)
 
 PLP = 0.1
 ![image](https://user-images.githubusercontent.com/60315006/210149728-0d6b3dc9-c0bd-412c-b094-c3aaadee592e.png)
 
 PLP = 0.3
 ![image](https://user-images.githubusercontent.com/60315006/210149776-3e016302-0bc4-47ca-8425-e0745a0ce2c5.png)
+Bigger file 
+![image](https://user-images.githubusercontent.com/60315006/210150119-e7903f34-2cf6-4236-898f-60e112708961.png)
+
 
